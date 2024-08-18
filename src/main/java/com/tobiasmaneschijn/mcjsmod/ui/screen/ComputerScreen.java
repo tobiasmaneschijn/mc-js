@@ -1,14 +1,12 @@
 package com.tobiasmaneschijn.mcjsmod.ui.screen;
 
-import com.mojang.blaze3d.shaders.Shader;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.tobiasmaneschijn.mcjsmod.MCJSMod;
 import com.tobiasmaneschijn.mcjsmod.blockentity.ComputerBlockEntity;
-import com.tobiasmaneschijn.mcjsmod.ui.widget.IDETextBox;
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.TextEditor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.Screen;
@@ -18,7 +16,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 
 public class ComputerScreen extends Screen {
-    private IDETextBox codeInput;
+    private TextEditor codeInput;
     private MultiLineEditBox terminalOutput;
     private Button runButton;
 
@@ -69,7 +67,7 @@ public class ComputerScreen extends Screen {
 
 
         // Code input area
-        codeInput = new IDETextBox(x, y+12, 256, 156);
+        codeInput = new TextEditor(x, y+12, 256, 156);
         addRenderableWidget(codeInput);
 
         // Run button

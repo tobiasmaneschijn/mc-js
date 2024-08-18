@@ -64,6 +64,30 @@ public class IDETextBox extends AbstractWidget {
         }
     }
 
+    private SelectionInfo getSelectionInfo(int line) {
+        if (!hasSelection()) return null;
+
+        int startLine = Math.min(selectionStartLine, selectionEndLine);
+        int endLine = Math.max(selectionStartLine, selectionEndLine);
+
+        if (line < startLine || line > endLine) return null;
+
+        String lineText = lines.get(line);
+
+        int startCol, endCol;
+        if (selectionStartLine < selectionEndLine || (selectionStartLine == selectionEndLine && selectionStartColumn < selectionEndColumn)) {
+            // Left-to-right selection
+            startCol = (line == selectionStartLine) ? selectionStartColumn : 0;
+            endCol = (line == selectionEndLine) ? selectionEndColumn : lineText.length();
+        } else {
+            // Right-to-left selection
+            startCol = (line == selectionEndLine) ? selectionEndColumn : 0;
+            endCol = (line == selectionStartLine) ? selectionStartColumn : lineText.length();
+        }
+
+        return new SelectionInfo(startCol, endCol);
+    }
+
     private void renderText(GuiGraphics guiGraphics) {
         Font font = Minecraft.getInstance().font;
         int y = this.getY() + PADDING - scrollOffset * LINE_HEIGHT;
@@ -74,12 +98,22 @@ public class IDETextBox extends AbstractWidget {
             List<TextSegment> segments = parseLineForHighlighting(line);
             int x = this.getX() + lineNumberWidth;
 
+            SelectionInfo selectionInfo = getSelectionInfo(i);
+
             for (TextSegment segment : segments) {
                 int segmentWidth = font.width(segment.text);
-                boolean isSelected = isTextSelected(i, x - this.getX() - lineNumberWidth, x - this.getX() - lineNumberWidth + segmentWidth);
 
-                if (isSelected) {
-                    guiGraphics.fill(x, y, x + segmentWidth, y + LINE_HEIGHT, 0x80808080);
+                if (selectionInfo != null) {
+                    int segmentStart = x - (this.getX() + lineNumberWidth);
+                    int segmentEnd = segmentStart + segmentWidth;
+                    int highlightStart = Math.max(segmentStart, selectionInfo.startX());
+                    int highlightEnd = Math.min(segmentEnd, selectionInfo.endX());
+
+                    if (highlightStart < highlightEnd) {
+                        int highlightStartX = this.getX() + lineNumberWidth + highlightStart;
+                        int highlightEndX = this.getX() + lineNumberWidth + highlightEnd;
+                        guiGraphics.fill(highlightStartX, y, highlightEndX, y + LINE_HEIGHT, 0x80808080);
+                    }
                 }
 
                 guiGraphics.drawString(font, segment.text, x, y, segment.color);
@@ -90,41 +124,33 @@ public class IDETextBox extends AbstractWidget {
         }
     }
 
-    private boolean isTextSelected(int line, int startX, int endX) {
-        if (selectionStartLine == -1 || selectionEndLine == -1) return false;
-
-        int startLine = Math.min(selectionStartLine, selectionEndLine);
-        int endLine = Math.max(selectionStartLine, selectionEndLine);
-
-        if (line < startLine || line > endLine) return false;
-
-        Font font = Minecraft.getInstance().font;
-        String lineText = lines.get(line);
-
-        if (line == startLine && line == endLine) {
-            int start = Math.min(selectionStartColumn, selectionEndColumn);
-            int end = Math.max(selectionStartColumn, selectionEndColumn);
-            int startPixel = font.width(lineText.substring(0, start));
-            int endPixel = font.width(lineText.substring(0, end));
-            return startX < endPixel && endX > startPixel;
-        } else if (line == startLine) {
-            int start = selectionStartLine < selectionEndLine ? selectionStartColumn : selectionEndColumn;
-            int startPixel = font.width(lineText.substring(0, start));
-            return endX > startPixel;
-        } else if (line == endLine) {
-            int end = selectionStartLine < selectionEndLine ? selectionEndColumn : selectionStartColumn;
-            int endPixel = font.width(lineText.substring(0, end));
-            return startX < endPixel;
+    private record SelectionInfo(int startX, int endX) {}
+    private void normalizeSelection() {
+        if (selectionStartLine > selectionEndLine ||
+                (selectionStartLine == selectionEndLine && selectionStartColumn > selectionEndColumn)) {
+            // Swap start and end if selection is right-to-left
+            int tempLine = selectionStartLine;
+            int tempColumn = selectionStartColumn;
+            selectionStartLine = selectionEndLine;
+            selectionStartColumn = selectionEndColumn;
+            selectionEndLine = tempLine;
+            selectionEndColumn = tempColumn;
         }
 
-        return true;
+        // Ensure selection bounds are within valid ranges
+        selectionStartLine = Math.max(0, Math.min(selectionStartLine, lines.size() - 1));
+        selectionEndLine = Math.max(0, Math.min(selectionEndLine, lines.size() - 1));
+        selectionStartColumn = Math.max(0, Math.min(selectionStartColumn, lines.get(selectionStartLine).length()));
+        selectionEndColumn = Math.max(0, Math.min(selectionEndColumn, lines.get(selectionEndLine).length()));
     }
 
     private void renderCursor(GuiGraphics guiGraphics) {
-        if (this.isFocused()) {
+        if (this.isFocused() && cursorLine >= 0 && cursorLine < lines.size()) {
             Font font = Minecraft.getInstance().font;
             int lineNumberWidth = font.width(String.valueOf(lines.size())) + PADDING * 2;
-            int cursorX = this.getX() + lineNumberWidth + font.width(lines.get(cursorLine).substring(0, cursorColumn));
+            String currentLine = lines.get(cursorLine);
+            int safeColumn = Math.min(cursorColumn, currentLine.length());
+            int cursorX = this.getX() + lineNumberWidth + font.width(currentLine.substring(0, safeColumn));
             int cursorY = this.getY() + PADDING + (cursorLine - scrollOffset) * LINE_HEIGHT;
 
             if (cursorY >= this.getY() && cursorY + LINE_HEIGHT <= this.getY() + this.height) {
@@ -132,7 +158,6 @@ public class IDETextBox extends AbstractWidget {
             }
         }
     }
-
     private List<TextSegment> parseLineForHighlighting(String line) {
         List<TextSegment> segments = new ArrayList<>();
 
@@ -204,111 +229,123 @@ public class IDETextBox extends AbstractWidget {
 
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        try {
+            if (Minecraft.getInstance().player != null) {
+                Minecraft.getInstance().player.displayClientMessage(Component.literal("Key pressed: " + keyCode), false);
+            }
 
-        if (Minecraft.getInstance().player != null) {
-            Minecraft.getInstance().player.displayClientMessage(Component.literal("Key pressed: " + keyCode), false);
-        }
+            // Ensure cursorLine is within valid range
+            cursorLine = Math.max(0, Math.min(cursorLine, lines.size() - 1));
+            // Ensure cursorColumn is within valid range for the current line
+            cursorColumn = Math.max(0, Math.min(cursorColumn, lines.get(cursorLine).length()));
 
-        switch (keyCode) {
-            case 256 -> { // Escape
-                setFocused(false);
-                return true;
-            }
-            case 259 -> { // Backspace
-                if (hasSelection()) {
-                    deleteSelection();
-                } else if (cursorColumn > 0) {
-                    String currentLine = lines.get(cursorLine);
-                    lines.set(cursorLine, currentLine.substring(0, cursorColumn - 1) + currentLine.substring(cursorColumn));
-                    cursorColumn--;
-                } else if (cursorLine > 0) {
-                    String currentLine = lines.remove(cursorLine);
-                    cursorLine--;
+            switch (keyCode) {
+                case 256 -> { // Escape
+                    setFocused(false);
+                    return true;
+                }
+                case 259 -> { // Backspace
+                    if (hasSelection()) {
+                        deleteSelection();
+                    } else if (cursorColumn > 0) {
+                        String currentLine = lines.get(cursorLine);
+                        lines.set(cursorLine, currentLine.substring(0, cursorColumn - 1) + currentLine.substring(cursorColumn));
+                        cursorColumn--;
+                    } else if (cursorLine > 0) {
+                        String currentLine = lines.remove(cursorLine);
+                        cursorLine--;
+                        cursorColumn = lines.get(cursorLine).length();
+                        lines.set(cursorLine, lines.get(cursorLine) + currentLine);
+                    }
+                    clearSelection();
+                    return true;
+                }
+                case 261 -> { // Delete
+                    if (hasSelection()) {
+                        deleteSelection();
+                    } else if (cursorColumn < lines.get(cursorLine).length()) {
+                        String currentLine = lines.get(cursorLine);
+                        lines.set(cursorLine, currentLine.substring(0, cursorColumn) + currentLine.substring(cursorColumn + 1));
+                    } else if (cursorLine < lines.size() - 1) {
+                        String currentLine = lines.remove(cursorLine + 1);
+                        lines.set(cursorLine, lines.get(cursorLine) + currentLine);
+                    }
+                    clearSelection();
+                    return true;
+                }
+                case 260 -> { // Home
+                    cursorColumn = 0;
+                    return true;
+                }
+                case 269 -> { // End
                     cursorColumn = lines.get(cursorLine).length();
-                    lines.set(cursorLine, lines.get(cursorLine) + currentLine);
+                    return true;
                 }
-                clearSelection();
-                return true;
-            }
-            case 261 -> { // Delete
-                if (hasSelection()) {
-                    deleteSelection();
-                } else if (cursorColumn < lines.get(cursorLine).length()) {
+                case 266 -> { // Page up
+                    scrollOffset = Math.max(0, scrollOffset - getVisibleLines());
+                    return true;
+                }
+                case 267 -> { // Page down
+                    scrollOffset = Math.min(lines.size() - getVisibleLines(), scrollOffset + getVisibleLines());
+                    return true;
+                }
+                case 257 -> { // Enter
                     String currentLine = lines.get(cursorLine);
-                    lines.set(cursorLine, currentLine.substring(0, cursorColumn) + currentLine.substring(cursorColumn + 1));
-                } else if (cursorLine < lines.size() - 1) {
-                    String currentLine = lines.remove(cursorLine + 1);
-                    lines.set(cursorLine, lines.get(cursorLine) + currentLine);
-                }
-                clearSelection();
-                return true;
-            }
-            case 260 -> { // Home
-                cursorColumn = 0;
-                return true;
-            }
-            case 269 -> { // End
-                cursorColumn = lines.get(cursorLine).length();
-                return true;
-            }
-            case 266 -> { // Page up
-                scrollOffset = Math.max(0, scrollOffset - getVisibleLines());
-                return true;
-            }
-            case 267 -> { // Page down
-                scrollOffset = Math.min(lines.size() - getVisibleLines(), scrollOffset + getVisibleLines());
-                return true;
-            }
-            case 257 -> { // Enter
-                String currentLine = lines.get(cursorLine);
-                String newLine = currentLine.substring(cursorColumn);
-                lines.set(cursorLine, currentLine.substring(0, cursorColumn));
-                lines.add(cursorLine + 1, newLine);
-                cursorLine++;
-                cursorColumn = 0;
-                return true;
-            }
-            case 263 -> { // Left arrow
-                if (cursorColumn > 0) {
-                    cursorColumn--;
-                } else if (cursorLine > 0) {
-                    cursorLine--;
-                    cursorColumn = lines.get(cursorLine).length();
-                }
-                return true;
-            }
-            case 262 -> { // Right arrow
-                if (cursorColumn < lines.get(cursorLine).length()) {
-                    cursorColumn++;
-                } else if (cursorLine < lines.size() - 1) {
+                    String newLine = currentLine.substring(cursorColumn);
+                    lines.set(cursorLine, currentLine.substring(0, cursorColumn));
+                    lines.add(cursorLine + 1, newLine);
                     cursorLine++;
                     cursorColumn = 0;
+                    return true;
                 }
-                return true;
-            }
-            case 265 -> { // Up arrow
-                if (cursorLine > 0) {
-                    cursorLine--;
-                    cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
+                case 263 -> { // Left arrow
+                    if (cursorColumn > 0) {
+                        cursorColumn--;
+                    } else if (cursorLine > 0) {
+                        cursorLine--;
+                        cursorColumn = lines.get(cursorLine).length();
+                    }
+                    return true;
                 }
-                return true;
-            }
-            case 264 -> { // Down arrow
-                if (cursorLine < lines.size() - 1) {
-                    cursorLine++;
-                    cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
+                case 262 -> { // Right arrow
+                    if (cursorColumn < lines.get(cursorLine).length()) {
+                        cursorColumn++;
+                    } else if (cursorLine < lines.size() - 1) {
+                        cursorLine++;
+                        cursorColumn = 0;
+                    }
+                    return true;
                 }
-                return true;
+                case 265 -> { // Up arrow
+                    if (cursorLine > 0) {
+                        cursorLine--;
+                        cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
+                    }
+                    return true;
+                }
+                case 264 -> { // Down arrow
+                    if (cursorLine < lines.size() - 1) {
+                        cursorLine++;
+                        cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
+                    }
+                    return true;
+                }
+                case 258 -> { // Tab
+                    String currentLine = lines.get(cursorLine);
+                    lines.set(cursorLine, currentLine.substring(0, cursorColumn) + "    " + currentLine.substring(cursorColumn));
+                    cursorColumn += 4;
+                    return true;
+                }
             }
-            case 258 -> { // Tab
-                String currentLine = lines.get(cursorLine);
-                lines.set(cursorLine, currentLine.substring(0, cursorColumn) + "    " + currentLine.substring(cursorColumn));
-                cursorColumn += 4;
-                return true;
-            }
+            return super.keyPressed(keyCode, scanCode, modifiers);
+        } catch (Exception e) {
+            // Log the exception
+            Minecraft.getInstance().player.displayClientMessage(Component.literal("Error in keyPressed: " + e.getMessage()), false);
+            e.printStackTrace();
+            return false;
         }
-        return super.keyPressed(keyCode, scanCode, modifiers);
     }
+
 
 
     private boolean hasSelection() {
@@ -317,10 +354,12 @@ public class IDETextBox extends AbstractWidget {
     }
 
     private void deleteSelection() {
+        if (!hasSelection()) return;
+
         int startLine = Math.min(selectionStartLine, selectionEndLine);
         int endLine = Math.max(selectionStartLine, selectionEndLine);
-        int startColumn = selectionStartLine < selectionEndLine ? selectionStartColumn : selectionEndColumn;
-        int endColumn = selectionStartLine < selectionEndLine ? selectionEndColumn : selectionStartColumn;
+        int startColumn = (startLine == selectionStartLine) ? selectionStartColumn : selectionEndColumn;
+        int endColumn = (endLine == selectionEndLine) ? selectionEndColumn : selectionStartColumn;
 
         if (startLine == endLine) {
             String line = lines.get(startLine);
@@ -328,43 +367,48 @@ public class IDETextBox extends AbstractWidget {
         } else {
             String startLineContent = lines.get(startLine).substring(0, startColumn);
             String endLineContent = lines.get(endLine).substring(endColumn);
-            lines.subList(startLine + 1, endLine + 1).clear();
+            for (int i = endLine; i > startLine; i--) {
+                lines.remove(i);
+            }
             lines.set(startLine, startLineContent + endLineContent);
         }
 
         cursorLine = startLine;
         cursorColumn = startColumn;
+        clearSelection();
     }
-
     private void clearSelection() {
-        selectionStartLine = -1;
-        selectionStartColumn = -1;
-        selectionEndLine = -1;
-        selectionEndColumn = -1;
+        selectionStartLine = selectionEndLine = cursorLine;
+        selectionStartColumn = selectionEndColumn = cursorColumn;
+        logDebugInfo("clearSelection");
     }
 
     @Override
     public boolean charTyped(char codePoint, int modifiers) {
-        if (hasSelection()) {
-            deleteSelection();
+        try {
+            if (hasSelection()) {
+                deleteSelection();
+            }
+            String currentLine = lines.get(cursorLine);
+            lines.set(cursorLine, currentLine.substring(0, cursorColumn) + codePoint + currentLine.substring(cursorColumn));
+            cursorColumn++;
+            clearSelection();
+            logDebugInfo("charTyped");
+            return true;
+        } catch (Exception e) {
+            Minecraft.getInstance().player.displayClientMessage(Component.literal("Error in charTyped: " + e.getMessage()), false);
+            e.printStackTrace();
+            return false;
         }
-        String currentLine = lines.get(cursorLine);
-        lines.set(cursorLine, currentLine.substring(0, cursorColumn) + codePoint + currentLine.substring(cursorColumn));
-        cursorColumn++;
-        clearSelection();
-        return true;
     }
-
     @Override
     public boolean mouseClicked(double mouseX, double mouseY, int button) {
         if (isMouseOver(mouseX, mouseY)) {
             setFocused(true);
             updateCursorPosition(mouseX, mouseY);
             if (button == 0) { // Left click
-                selectionStartLine = cursorLine;
-                selectionStartColumn = cursorColumn;
-                selectionEndLine = cursorLine;
-                selectionEndColumn = cursorColumn;
+                selectionStartLine = selectionEndLine = cursorLine;
+                selectionStartColumn = selectionEndColumn = cursorColumn;
             }
             return true;
         }
@@ -377,12 +421,17 @@ public class IDETextBox extends AbstractWidget {
             updateCursorPosition(mouseX, mouseY);
             selectionEndLine = cursorLine;
             selectionEndColumn = cursorColumn;
+            logDebugInfo("mouseDragged");
             return true;
         }
         return super.mouseDragged(mouseX, mouseY, button, dragX, dragY);
     }
-
     private void updateCursorPosition(double mouseX, double mouseY) {
+        if (mouseX < this.getX() || mouseX > this.getX() + this.width ||
+                mouseY < this.getY() || mouseY > this.getY() + this.height) {
+            return;
+        }
+
         Font font = Minecraft.getInstance().font;
         int lineNumberWidth = font.width(String.valueOf(lines.size())) + PADDING * 2;
 
@@ -393,16 +442,30 @@ public class IDETextBox extends AbstractWidget {
         int x = this.getX() + lineNumberWidth;
         int textX = (int)mouseX - x;
 
-        for (cursorColumn = 0; cursorColumn <= line.length(); cursorColumn++) {
-            int width = font.width(line.substring(0, cursorColumn));
+        cursorColumn = 0;
+        for (int i = 0; i <= line.length(); i++) {
+            int width = font.width(line.substring(0, i));
             if (width > textX) {
-                if (cursorColumn > 0 && textX < width - font.width(line.substring(cursorColumn - 1, cursorColumn)) / 2) {
+                cursorColumn = i;
+                if (i > 0 && textX < width - font.width(line.substring(i - 1, i)) / 2) {
                     cursorColumn--;
                 }
                 break;
             }
         }
         cursorColumn = Math.min(cursorColumn, line.length());
+    }
+
+    private void logDebugInfo(String methodName) {
+        if (Minecraft.getInstance().player != null) {
+            Minecraft.getInstance().player.displayClientMessage(Component.literal(
+                    String.format("%s - Cursor: (%d, %d), Selection: (%d, %d) to (%d, %d), HasSelection: %b",
+                            methodName, cursorLine, cursorColumn,
+                            selectionStartLine, selectionStartColumn,
+                            selectionEndLine, selectionEndColumn,
+                            hasSelection())
+            ), false);
+        }
     }
 
     private int getVisibleLines() {

@@ -10,6 +10,7 @@ import net.minecraft.client.gui.narration.NarratedElementType;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.network.chat.Component;
 import org.jetbrains.annotations.NotNull;
+import org.lwjgl.glfw.GLFW;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -50,6 +51,18 @@ public class IDETextBox extends AbstractWidget {
         renderText(guiGraphics);
         renderCursor(guiGraphics);
     }
+
+    public String getText() {
+        return String.join("\n", lines);
+    }
+
+    public void setText(String text) {
+        this.lines = new ArrayList<>(List.of(text.split("\n", -1)));
+        this.cursorLine = Math.min(cursorLine, lines.size() - 1);
+        this.cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
+        clearSelection();
+    }
+
 
     private void renderBackground(GuiGraphics guiGraphics) {
         guiGraphics.fill(this.getX(), this.getY(), this.getX() + this.width, this.getY() + this.height, 0xFF000000);
@@ -100,24 +113,15 @@ public class IDETextBox extends AbstractWidget {
 
             SelectionInfo selectionInfo = getSelectionInfo(i);
 
+            if (selectionInfo != null) {
+                int highlightStartX = this.getX() + lineNumberWidth + font.width(line.substring(0, selectionInfo.startX()));
+                int highlightEndX = this.getX() + lineNumberWidth + font.width(line.substring(0, selectionInfo.endX()));
+                guiGraphics.fill(highlightStartX, y, highlightEndX, y + LINE_HEIGHT, 0x80808080);
+            }
+
             for (TextSegment segment : segments) {
-                int segmentWidth = font.width(segment.text);
-
-                if (selectionInfo != null) {
-                    int segmentStart = x - (this.getX() + lineNumberWidth);
-                    int segmentEnd = segmentStart + segmentWidth;
-                    int highlightStart = Math.max(segmentStart, selectionInfo.startX());
-                    int highlightEnd = Math.min(segmentEnd, selectionInfo.endX());
-
-                    if (highlightStart < highlightEnd) {
-                        int highlightStartX = this.getX() + lineNumberWidth + highlightStart;
-                        int highlightEndX = this.getX() + lineNumberWidth + highlightEnd;
-                        guiGraphics.fill(highlightStartX, y, highlightEndX, y + LINE_HEIGHT, 0x80808080);
-                    }
-                }
-
                 guiGraphics.drawString(font, segment.text, x, y, segment.color);
-                x += segmentWidth;
+                x += font.width(segment.text);
             }
 
             y += LINE_HEIGHT;
@@ -239,6 +243,95 @@ public class IDETextBox extends AbstractWidget {
             // Ensure cursorColumn is within valid range for the current line
             cursorColumn = Math.max(0, Math.min(cursorColumn, lines.get(cursorLine).length()));
 
+
+            boolean isCtrlPressed = (modifiers & GLFW.GLFW_MOD_CONTROL) != 0;
+            boolean isShiftPressed = (modifiers & GLFW.GLFW_MOD_SHIFT) != 0;
+
+            if(isCtrlPressed)
+            {
+                switch (keyCode) {
+                    case 65 -> { // Ctrl + A
+                        selectAll();
+                        return true;
+                    }
+                    case 67 -> { // Ctrl + C
+                        copy();
+                        return true;
+                    }
+                    case 86 -> { // Ctrl + V
+                        paste();
+                        return true;
+                    }
+                    case 88 -> { // Ctrl + X
+                        cut();
+                        return true;
+                    }
+                    // ctrl + D
+                    case 68 -> {
+                        duplicateLine();
+                        return true;
+                    }
+                    // ctrl + Z
+                    case 90 -> {
+                        undo();
+                        return true;
+                    }
+                    // ctrl + Y
+                    case 89 -> {
+                        redo();
+                        return true;
+                    }
+                }
+            }
+            else if (isShiftPressed) {
+                switch (keyCode) {
+                    case 263 -> { // Shift + Left arrow
+                        if (!hasSelection()) {
+                            selectionStartLine = cursorLine;
+                            selectionStartColumn = cursorColumn;
+                        }
+                        cursorColumn = Math.max(0, cursorColumn - 1);
+                        selectionEndLine = cursorLine;
+                        selectionEndColumn = cursorColumn;
+                        logDebugInfo("Shift + Left arrow");
+                        return true;
+                    }
+                    case 262 -> { // Shift + Right arrow
+                        if (!hasSelection()) {
+                            selectionStartLine = cursorLine;
+                            selectionStartColumn = cursorColumn;
+                        }
+                        cursorColumn = Math.min(lines.get(cursorLine).length(), cursorColumn + 1);
+                        selectionEndLine = cursorLine;
+                        selectionEndColumn = cursorColumn;
+                        return true;
+                    }
+                    case 265 -> { // Shift + Up arrow
+                        if (!hasSelection()) {
+                            selectionStartLine = cursorLine;
+                            selectionStartColumn = cursorColumn;
+                        }
+                        cursorLine = Math.max(0, cursorLine - 1);
+                        cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
+                        selectionEndLine = cursorLine;
+                        selectionEndColumn = cursorColumn;
+                        return true;
+                    }
+                    case 264 -> { // Shift + Down arrow
+                        if (!hasSelection()) {
+                            selectionStartLine = cursorLine;
+                            selectionStartColumn = cursorColumn;
+                        }
+                        cursorLine = Math.min(lines.size() - 1, cursorLine + 1);
+                        cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
+                        selectionEndLine = cursorLine;
+                        selectionEndColumn = cursorColumn;
+                        return true;
+                    }
+                }
+            }
+
+
             switch (keyCode) {
                 case 256 -> { // Escape
                     setFocused(false);
@@ -251,11 +344,13 @@ public class IDETextBox extends AbstractWidget {
                         String currentLine = lines.get(cursorLine);
                         lines.set(cursorLine, currentLine.substring(0, cursorColumn - 1) + currentLine.substring(cursorColumn));
                         cursorColumn--;
+                        addUndoAction();
                     } else if (cursorLine > 0) {
                         String currentLine = lines.remove(cursorLine);
                         cursorLine--;
                         cursorColumn = lines.get(cursorLine).length();
                         lines.set(cursorLine, lines.get(cursorLine) + currentLine);
+                        addUndoAction();
                     }
                     clearSelection();
                     return true;
@@ -266,9 +361,11 @@ public class IDETextBox extends AbstractWidget {
                     } else if (cursorColumn < lines.get(cursorLine).length()) {
                         String currentLine = lines.get(cursorLine);
                         lines.set(cursorLine, currentLine.substring(0, cursorColumn) + currentLine.substring(cursorColumn + 1));
+                        addUndoAction();
                     } else if (cursorLine < lines.size() - 1) {
                         String currentLine = lines.remove(cursorLine + 1);
                         lines.set(cursorLine, lines.get(cursorLine) + currentLine);
+                        addUndoAction();
                     }
                     clearSelection();
                     return true;
@@ -290,6 +387,9 @@ public class IDETextBox extends AbstractWidget {
                     return true;
                 }
                 case 257 -> { // Enter
+                    if (hasSelection()) {
+                        deleteSelection();
+                    }
                     String currentLine = lines.get(cursorLine);
                     String newLine = currentLine.substring(cursorColumn);
                     lines.set(cursorLine, currentLine.substring(0, cursorColumn));
@@ -299,6 +399,9 @@ public class IDETextBox extends AbstractWidget {
                     return true;
                 }
                 case 263 -> { // Left arrow
+                    if (hasSelection()) {
+                        clearSelection();
+                    }
                     if (cursorColumn > 0) {
                         cursorColumn--;
                     } else if (cursorLine > 0) {
@@ -308,6 +411,9 @@ public class IDETextBox extends AbstractWidget {
                     return true;
                 }
                 case 262 -> { // Right arrow
+                    if (hasSelection()) {
+                        clearSelection();
+                    }
                     if (cursorColumn < lines.get(cursorLine).length()) {
                         cursorColumn++;
                     } else if (cursorLine < lines.size() - 1) {
@@ -317,6 +423,9 @@ public class IDETextBox extends AbstractWidget {
                     return true;
                 }
                 case 265 -> { // Up arrow
+                    if (hasSelection()) {
+                        clearSelection();
+                    }
                     if (cursorLine > 0) {
                         cursorLine--;
                         cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
@@ -324,6 +433,9 @@ public class IDETextBox extends AbstractWidget {
                     return true;
                 }
                 case 264 -> { // Down arrow
+                    if (hasSelection()) {
+                        clearSelection();
+                    }
                     if (cursorLine < lines.size() - 1) {
                         cursorLine++;
                         cursorColumn = Math.min(cursorColumn, lines.get(cursorLine).length());
@@ -331,6 +443,9 @@ public class IDETextBox extends AbstractWidget {
                     return true;
                 }
                 case 258 -> { // Tab
+                    if (hasSelection()) {
+                        clearSelection();
+                    }
                     String currentLine = lines.get(cursorLine);
                     lines.set(cursorLine, currentLine.substring(0, cursorColumn) + "    " + currentLine.substring(cursorColumn));
                     cursorColumn += 4;
@@ -358,8 +473,17 @@ public class IDETextBox extends AbstractWidget {
 
         int startLine = Math.min(selectionStartLine, selectionEndLine);
         int endLine = Math.max(selectionStartLine, selectionEndLine);
-        int startColumn = (startLine == selectionStartLine) ? selectionStartColumn : selectionEndColumn;
-        int endColumn = (endLine == selectionEndLine) ? selectionEndColumn : selectionStartColumn;
+        int startColumn, endColumn;
+
+        if (selectionStartLine < selectionEndLine || (selectionStartLine == selectionEndLine && selectionStartColumn < selectionEndColumn)) {
+            // Left-to-right selection
+            startColumn = selectionStartColumn;
+            endColumn = selectionEndColumn;
+        } else {
+            // Right-to-left selection
+            startColumn = selectionEndColumn;
+            endColumn = selectionStartColumn;
+        }
 
         if (startLine == endLine) {
             String line = lines.get(startLine);
@@ -367,16 +491,16 @@ public class IDETextBox extends AbstractWidget {
         } else {
             String startLineContent = lines.get(startLine).substring(0, startColumn);
             String endLineContent = lines.get(endLine).substring(endColumn);
-            for (int i = endLine; i > startLine; i--) {
-                lines.remove(i);
-            }
+            lines.subList(startLine + 1, endLine + 1).clear();
             lines.set(startLine, startLineContent + endLineContent);
         }
 
         cursorLine = startLine;
         cursorColumn = startColumn;
+        addUndoAction();
         clearSelection();
     }
+
     private void clearSelection() {
         selectionStartLine = selectionEndLine = cursorLine;
         selectionStartColumn = selectionEndColumn = cursorColumn;
@@ -393,6 +517,7 @@ public class IDETextBox extends AbstractWidget {
             lines.set(cursorLine, currentLine.substring(0, cursorColumn) + codePoint + currentLine.substring(cursorColumn));
             cursorColumn++;
             clearSelection();
+            addUndoAction();
             logDebugInfo("charTyped");
             return true;
         } catch (Exception e) {
@@ -478,4 +603,130 @@ public class IDETextBox extends AbstractWidget {
     }
 
     private record TextSegment(String text, int color) {}
+
+    private void selectAll() {
+        selectionStartLine = 0;
+        selectionStartColumn = 0;
+        selectionEndLine = lines.size() - 1;
+        selectionEndColumn = lines.get(selectionEndLine).length();
+        cursorLine = selectionEndLine;
+        cursorColumn = selectionEndColumn;
+    }
+
+    private void copy() {
+        if (hasSelection()) {
+            String selectedText = getSelectedText();
+            Minecraft.getInstance().keyboardHandler.setClipboard(selectedText);
+        }
+    }
+
+    private void cut() {
+        if (hasSelection()) {
+            copy();
+            deleteSelection();
+            addUndoAction();
+        }
+    }
+
+    private void paste() {
+        String clipboardText = Minecraft.getInstance().keyboardHandler.getClipboard();
+        if (!clipboardText.isEmpty()) {
+            if (hasSelection()) {
+                deleteSelection();
+            }
+            insertText(clipboardText);
+            addUndoAction();
+        }
+    }
+
+    private void duplicateLine() {
+        String currentLine = lines.get(cursorLine);
+        lines.add(cursorLine + 1, currentLine);
+        cursorLine++;
+        addUndoAction();
+    }
+
+    private String getSelectedText() {
+        if (!hasSelection()) return "";
+
+        StringBuilder sb = new StringBuilder();
+        int startLine = Math.min(selectionStartLine, selectionEndLine);
+        int endLine = Math.max(selectionStartLine, selectionEndLine);
+        int startCol = (startLine == selectionStartLine) ? selectionStartColumn : selectionEndColumn;
+        int endCol = (endLine == selectionEndLine) ? selectionEndColumn : selectionStartColumn;
+
+        for (int i = startLine; i <= endLine; i++) {
+            String line = lines.get(i);
+            if (i == startLine && i == endLine) {
+                sb.append(line, Math.min(startCol, endCol), Math.max(startCol, endCol));
+            } else if (i == startLine) {
+                sb.append(line.substring(startCol)).append("\n");
+            } else if (i == endLine) {
+                sb.append(line, 0, endCol);
+            } else {
+                sb.append(line).append("\n");
+            }
+        }
+
+        return sb.toString();
+    }
+
+    private void insertText(String text) {
+        String[] insertLines = text.split("\n", -1);
+        String currentLine = lines.get(cursorLine);
+        String beforeCursor = currentLine.substring(0, cursorColumn);
+        String afterCursor = currentLine.substring(cursorColumn);
+
+        lines.set(cursorLine, beforeCursor + insertLines[0]);
+        cursorColumn += insertLines[0].length();
+
+        for (int i = 1; i < insertLines.length; i++) {
+            cursorLine++;
+            lines.add(cursorLine, insertLines[i]);
+            cursorColumn = insertLines[i].length();
+        }
+
+        lines.set(cursorLine, lines.get(cursorLine) + afterCursor);
+    }
+
+    private final List<UndoAction> undoStack = new ArrayList<>();
+    private final List<UndoAction> redoStack = new ArrayList<>();
+
+    private static class UndoAction {
+        List<String> lines;
+        int cursorLine;
+        int cursorColumn;
+
+        UndoAction(List<String> lines, int cursorLine, int cursorColumn) {
+            this.lines = new ArrayList<>(lines);
+            this.cursorLine = cursorLine;
+            this.cursorColumn = cursorColumn;
+        }
+    }
+
+    private void addUndoAction() {
+        undoStack.add(new UndoAction(lines, cursorLine, cursorColumn));
+        redoStack.clear();
+    }
+
+    private void undo() {
+        if (!undoStack.isEmpty()) {
+            UndoAction action = undoStack.remove(undoStack.size() - 1);
+            redoStack.add(new UndoAction(lines, cursorLine, cursorColumn));
+            lines = action.lines;
+            cursorLine = action.cursorLine;
+            cursorColumn = action.cursorColumn;
+        }
+    }
+
+    private void redo() {
+        if (!redoStack.isEmpty()) {
+            UndoAction action = redoStack.remove(redoStack.size() - 1);
+            undoStack.add(new UndoAction(lines, cursorLine, cursorColumn));
+            lines = action.lines;
+            cursorLine = action.cursorLine;
+            cursorColumn = action.cursorColumn;
+        }
+    }
+
 }

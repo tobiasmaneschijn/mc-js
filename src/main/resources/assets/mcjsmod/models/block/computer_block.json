@@ -1,0 +1,8 @@
+{
+  "parent": "block/orientable",
+  "textures": {
+    "top": "mcjsmod:block/computer_block_top",
+    "front": "mcjsmod:block/computer_block_front",
+    "side": "mcjsmod:block/computer_block_side"
+  }
+}

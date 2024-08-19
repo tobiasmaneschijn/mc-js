@@ -2,6 +2,7 @@ plugins {
     id 'java-library'
     id 'maven-publish'
     id 'net.neoforged.moddev' version '1.0.17'
+    id 'com.gradleup.shadow' version '8.3.0'
 }
 
 tasks.named('wrapper', Wrapper).configure {
@@ -11,6 +12,14 @@ tasks.named('wrapper', Wrapper).configure {
     // file size for Gradle. If you do switch this to ALL, run the Gradle wrapper task twice afterwards.
     // (Verify by checking gradle/wrapper/gradle-wrapper.properties to see if distributionUrl now points to `-all`)
     distributionType = Wrapper.DistributionType.BIN
+}
+
+ext {
+    mod_id = 'mcjsmod'
+    mod_version = '1.0.0'
+    loader_version_range = "[14,)"
+    neo_version_range = "[20.2,)"
+    minecraft_version_range = "[1.21)"
 }
 
 version = mod_version
@@ -86,6 +95,7 @@ neoForge {
             // You can set various levels here.
             // Please read: https://stackoverflow.com/questions/2031163/when-to-use-the-different-log-levels
             logLevel = org.slf4j.event.Level.DEBUG
+
         }
     }
 
@@ -111,6 +121,9 @@ configurations {
     runtimeClasspath.extendsFrom localRuntime
 }
 
+
+def graalvmVersion = '23.1.4'
+
 dependencies {
     // Example optional mod dependency with JEI
     // The JEI API is declared for compile time use, while the full JEI artifact is used at runtime
@@ -127,13 +140,101 @@ dependencies {
     // Example mod dependency using a file as dependency
     // implementation files("libs/coolmod-${mc_version}-${coolmod_version}.jar")
 
-    // Example project dependency using a sister or child project:
-    // implementation project(":myproject")
+    // GraalVM dependencies
+    implementation "org.graalvm.polyglot:js-community:${graalvmVersion}"
+    implementation "org.graalvm.js:js-scriptengine:${graalvmVersion}"
+    implementation "org.graalvm.sdk:graal-sdk:${graalvmVersion}"
+    implementation "org.graalvm.truffle:truffle-api:${graalvmVersion}"
+    implementation "org.graalvm.polyglot:polyglot:${graalvmVersion}"
 
-    // For more info:
-    // http://www.gradle.org/docs/current/userguide/artifact_dependencies_tutorial.html
-    // http://www.gradle.org/docs/current/userguide/dependency_management.html
+
 }
+
+
+sourceSets {
+    graal {
+        java {
+            srcDir 'src/graal/java'
+        }
+        resources {
+            srcDir 'src/graal/resources'
+        }
+    }
+}
+
+dependencies {
+    // GraalVM dependencies
+    graalImplementation "org.graalvm.polyglot:js-community:${graalvmVersion}"
+    graalImplementation "org.graalvm.js:js-scriptengine:${graalvmVersion}"
+    graalImplementation "org.graalvm.sdk:graal-sdk:${graalvmVersion}"
+    graalImplementation "org.graalvm.truffle:truffle-api:${graalvmVersion}"
+    graalImplementation "org.graalvm.polyglot:polyglot:${graalvmVersion}"
+
+    runtimeOnly "org.graalvm.polyglot:js-community:${graalvmVersion}"
+    runtimeOnly "org.graalvm.js:js-scriptengine:${graalvmVersion}"
+    runtimeOnly "org.graalvm.sdk:graal-sdk:${graalvmVersion}"
+    runtimeOnly "org.graalvm.truffle:truffle-api:${graalvmVersion}"
+    runtimeOnly "org.graalvm.polyglot:polyglot:${graalvmVersion}"
+
+    // Make these available at compile time but don't include in the mod JAR
+    compileOnly sourceSets.graal.output
+}
+
+
+tasks.register('createGraalModsToml') {
+    def inputFile = file("src/graal/resources/META-INF/neoforge.mods.toml")
+    def outputFile = file("${buildDir}/resources/graal/META-INF/neoforge.mods.toml")
+
+    inputs.file inputFile
+
+    outputs.file outputFile
+
+    doLast {
+        outputFile.parentFile.mkdirs()
+        def content = inputFile.text
+
+        outputFile.text = content
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn tasks.named('createGraalModsToml')
+}
+
+
+tasks.withType(ProcessResources).configureEach {
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.register('graalJar', com.github.jengelman.gradle.plugins.shadow.tasks.ShadowJar) {
+    dependsOn tasks.named('createGraalModsToml')
+
+    archiveClassifier.set('graal')
+    from sourceSets.graal.output
+    from("${buildDir}/resources/graal") {
+        include 'META-INF/mods.toml'
+    }
+    configurations = [project.configurations.graalRuntimeClasspath]
+
+    exclude 'META-INF/*.SF'
+    exclude 'META-INF/*.DSA'
+    exclude 'META-INF/*.RSA'
+    exclude 'META-INF/mods.toml'  // Exclude the main mod's mods.toml
+    exclude 'com/ibm/icu/**'  // Exclude ICU data
+
+
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+
+tasks.named('jar') {
+    finalizedBy tasks.named('graalJar')
+}
+
+artifacts {
+    archives tasks.named('graalJar')
+}
+
+
 
 // This block of code expands all declared replace properties in the specified resource targets.
 // A missing property will result in an error. Properties are expanded using ${} Groovy notation.

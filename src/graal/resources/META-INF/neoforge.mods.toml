@@ -1,0 +1,27 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="mcjsmodgraal"
+version="1.0.0"
+displayName="MC JS Mod GraalVM Dependencies"
+authors="Your Name"
+description='''
+This is a dependency mod containing GraalVM libraries for MC JS Mod.
+It should be loaded automatically with the main mod.
+'''
+
+[[dependencies."mcjsmodgraal"]]
+modId="neoforge"
+type="required"
+versionRange="[20.2,)"
+ordering="NONE"
+side="BOTH"
+
+[[dependencies."mcjsmodgraal"]]
+modId="minecraft"
+type="required"
+versionRange="[1.20.2,1.21]"
+ordering="NONE"
+side="BOTH"

@@ -18,9 +18,9 @@ class DefaultInputHandler implements IInputHandler {
     @Override
     public boolean handleKeyPress(int keyCode, int scanCode, int modifiers) {
         try {
-            if (Minecraft.getInstance().player != null) {
+     /*       if (Minecraft.getInstance().player != null) {
                 Minecraft.getInstance().player.displayClientMessage(Component.literal("Key pressed: " + keyCode), false);
-            }
+            }*/
 
             Cursor cursor = editor.getCursor();
             Selection selection = editor.getSelection();
@@ -52,7 +52,6 @@ class DefaultInputHandler implements IInputHandler {
                         }
                         moveCursorLeft(cursor, lines);
                         selection.setEnd(cursor.getLine(), cursor.getColumn());
-                        logDebugInfo("Shift + Left arrow", editor);
                         return true;
                     }
                     case 262 -> { // Shift + Right arrow
@@ -265,7 +264,6 @@ class DefaultInputHandler implements IInputHandler {
             cursor.setColumn(cursorColumn + 1 );
             editor.getSelection().clear();
             editor.getUndoManager().addUndoAction(new UndoAction(lines, cursor));
-            logDebugInfo("charTyped", editor);
             return true;
         } catch (Exception e) {
             Minecraft.getInstance().player.displayClientMessage(Component.literal("Error in charTyped: " + e.getMessage()), false);
@@ -404,7 +402,6 @@ class DefaultInputHandler implements IInputHandler {
             editor.updateCursorPosition(mouseX, mouseY);
             editor.getSelection().setEndLine(editor.getCursor().getLine());
             editor.getSelection().setEndColumn(editor.getCursor().getColumn());
-            logDebugInfo("mouseDragged", editor);
             return true;
         }
         return false;

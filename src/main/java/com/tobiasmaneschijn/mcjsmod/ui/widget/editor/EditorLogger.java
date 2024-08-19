@@ -5,6 +5,8 @@ import net.minecraft.network.chat.Component;
 
 public class EditorLogger {
     public static void logDebugInfo(String methodName, TextEditor editor) {
+
+
         if (Minecraft.getInstance().player != null) {
 
             int cursorLine = editor.getCursor().getLine();

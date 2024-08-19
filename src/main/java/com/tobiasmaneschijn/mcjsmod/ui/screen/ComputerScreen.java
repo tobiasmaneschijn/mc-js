@@ -3,31 +3,35 @@ package com.tobiasmaneschijn.mcjsmod.ui.screen;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.tobiasmaneschijn.mcjsmod.MCJSMod;
 import com.tobiasmaneschijn.mcjsmod.blockentity.ComputerBlockEntity;
+import com.tobiasmaneschijn.mcjsmod.network.payload.ComputerBlockPayload;
+import com.tobiasmaneschijn.mcjsmod.network.payload.RunComputerCodePayload;
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.EditorLogger;
 import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.TextEditor;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.MultiLineEditBox;
-import net.minecraft.client.gui.components.StringWidget;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.neoforged.neoforge.network.PacketDistributor;
 
 public class ComputerScreen extends Screen {
-    private TextEditor codeInput;
+    private TextEditor codeEditor;
     private MultiLineEditBox terminalOutput;
     private Button runButton;
-
-    private Button incrementButton;
-
-    private StringWidget incrementCounter;
+    private Button SaveButton;
 
     private final int imageWidth = 256;
     private final int imageHeight = 256;
 
     private ComputerBlockEntity computerBlockEntity;
+
+    private String lastSentCode;
+    private long lastEditTime;
+    private static final long DEBOUNCE_TIME = 500; // 500ms debounce
 
     // texture asset locations
 
@@ -47,8 +51,9 @@ public class ComputerScreen extends Screen {
     private static final int RIGHT_SIDE_UV_X_START = 244;
     private static final int RIGHT_SIDE_UV_Y_START = 24;
 
-
-
+    private long saveButtonClickTime;
+    private static final long SAVE_BUTTON_RESET_DELAY = 2000; // 2 seconds in milliseconds
+    private boolean isSaveButtonSaved = false;
     private int x;
     private int y;
 
@@ -56,25 +61,44 @@ public class ComputerScreen extends Screen {
         super(Component.translatable("ui.mcjsmod.computer_screen_title"));
         if (Minecraft.getInstance().level != null) {
             this.computerBlockEntity = (ComputerBlockEntity) Minecraft.getInstance().level.getBlockEntity(pos);
+            if (computerBlockEntity != null) {
+                this.lastSentCode = computerBlockEntity.getCode();
+            }
         }
     }
 
     @Override
     protected void init() {
         super.init();
+
+
          x = (width - imageWidth) / 2;
          y = (height - imageHeight) / 2;
 
 
         // Code input area
-        codeInput = new TextEditor(x, y+12, 256, 156);
-        addRenderableWidget(codeInput);
+        codeEditor = new TextEditor(x, y+12, 256, 156);
+        codeEditor.setText(lastSentCode);
+        addRenderableWidget(codeEditor);
 
         // Run button
-        runButton = Button.builder(Component.literal("Run"), button -> runCode())
-                .bounds(x + 10, y + 125, 50, 20)
+        runButton = Button.builder(Component.literal("Run"), button ->
+            runCode())
+                // put on the right side of the background
+                .bounds(x + 256 + 25, y + 12, 50, 20)
                 .build();
-        //addRenderableWidget(runButton);
+        addRenderableWidget(runButton);
+
+        // Update the Save button initialization
+        SaveButton = Button.builder(Component.literal("Save"), button -> {
+                    sendCodeUpdate();
+                    saveButtonClickTime = System.currentTimeMillis();
+                    button.setMessage(Component.literal("Saved"));
+                    isSaveButtonSaved = true;
+                })
+                .bounds(x + 256 + 25, y + 12 + 25, 50, 20)
+                .build();
+        addRenderableWidget(SaveButton);
 
         // Terminal output area
         terminalOutput = new MultiLineEditBox(this.font, x, y + 156 + 12, 256, 80, Component.literal("This here be the output log"), Component.literal("Output"));
@@ -82,8 +106,56 @@ public class ComputerScreen extends Screen {
         addRenderableWidget(terminalOutput);
     }
 
+    @Override
+    public void tick() {
+        super.tick();
+
+        if (!codeEditor.getText().equals(lastSentCode)) {
+            lastEditTime = System.currentTimeMillis();
+        }
+
+        if (isDirtyAndDebounced()) {
+            sendCodeUpdate();
+        }
+
+        if (isSaveButtonSaved && System.currentTimeMillis() - saveButtonClickTime > SAVE_BUTTON_RESET_DELAY) {
+            SaveButton.setMessage(Component.literal("Save"));
+            isSaveButtonSaved = false;
+        }
+    }
+
+    private boolean isDirtyAndDebounced() {
+        return !codeEditor.getText().equals(lastSentCode) &&
+                System.currentTimeMillis() - lastEditTime > DEBOUNCE_TIME;
+    }
+
+    private void sendCodeUpdate() {
+        String newCode = codeEditor.getText();
+        ComputerBlockPayload payload = new ComputerBlockPayload(computerBlockEntity.getBlockPos(), newCode);
+        PacketDistributor.sendToServer(payload);
+        lastSentCode = newCode;
+
+        if(SaveButton == null) {
+            return;
+        }
+
+        saveButtonClickTime = System.currentTimeMillis();
+        SaveButton.setMessage(Component.literal("Saved"));
+        isSaveButtonSaved = true;
+        // debug message
+
+    }
+
+    @Override
+    public void onClose() {
+        super.onClose();
+        // Ensure any unsent changes are sent when closing the screen
+         sendCodeUpdate();
+    }
+
     private void runCode() {
-        // ModMessages.sendToServer(new RunCodeC2SPacket(code, menu.getBlockEntity().getBlockPos()));
+        RunComputerCodePayload payload = new RunComputerCodePayload(computerBlockEntity.getBlockPos());
+        PacketDistributor.sendToServer(payload);
     }
 
     @Override

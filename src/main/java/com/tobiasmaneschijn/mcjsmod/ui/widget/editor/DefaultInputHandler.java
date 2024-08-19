@@ -1,12 +1,11 @@
 package com.tobiasmaneschijn.mcjsmod.ui.widget.editor;
 
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.interfaces.IInputHandler;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import org.lwjgl.glfw.GLFW;
 
 import java.util.List;
-
-import static com.tobiasmaneschijn.mcjsmod.ui.widget.editor.EditorLogger.logDebugInfo;
 
 class DefaultInputHandler implements IInputHandler {
     private final TextEditor editor;

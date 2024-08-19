@@ -1,10 +1,11 @@
 package com.tobiasmaneschijn.mcjsmod.ui.widget.editor;
 
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.interfaces.IEditorRenderer;
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.record.TextSegment;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;
 
-import java.util.ArrayList;
 import java.util.List;
 
 class DefaultEditorRenderer implements IEditorRenderer {

@@ -1,5 +1,6 @@
-package com.tobiasmaneschijn.mcjsmod.ui.widget.editor;
+package com.tobiasmaneschijn.mcjsmod.ui.widget.editor.interfaces;
 
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.TextEditor;
 import net.minecraft.client.gui.GuiGraphics;
 
 public interface IEditorRenderer {

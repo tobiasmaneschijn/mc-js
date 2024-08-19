@@ -11,6 +11,8 @@ import com.tobiasmaneschijn.mcjsmod.network.ServerPayloadHandler;
 import com.tobiasmaneschijn.mcjsmod.network.ServerUtils;
 import com.tobiasmaneschijn.mcjsmod.network.payload.ComputerBlockPayload;
 import com.tobiasmaneschijn.mcjsmod.network.payload.RunComputerCodePayload;
+import com.tobiasmaneschijn.mcjsmod.network.shell.JavaScriptExecutionPayload;
+import com.tobiasmaneschijn.mcjsmod.network.shell.JavaScriptResultPayload;
 import com.tobiasmaneschijn.mcjsmod.ui.menu.ModMenuTypes;
 import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.IEventBus;
@@ -119,17 +121,17 @@ public class MCJSMod
         public static void register(final RegisterPayloadHandlersEvent event) {
             // Sets the current network version
             final PayloadRegistrar registrar = event.registrar("1");
-            registrar.playBidirectional(
-                    ComputerBlockPayload.TYPE,
-                    ComputerBlockPayload.STREAM_CODEC,
-                    new DirectionalPayloadHandler<>(
-                            ClientPayloadHandler::handleComputerBlockPayload,
-                            ServerPayloadHandler::handleComputerBlockPayload
-                    )
-            );
-            registrar.playToServer(RunComputerCodePayload.TYPE, RunComputerCodePayload.STREAM_CODEC,
-                    ServerPayloadHandler::handleRunComputerCodePayload);
 
+            registrar.playToClient(
+                    JavaScriptResultPayload.TYPE,
+                    JavaScriptResultPayload.STREAM_CODEC,
+                    ClientPayloadHandler::handleJavaScriptResultPayload
+            );
+            registrar.playToServer(
+                    JavaScriptExecutionPayload.TYPE,
+                    JavaScriptExecutionPayload.STREAM_CODEC,
+                    ServerPayloadHandler::handleJavaScriptExecutionPayload
+            );
         }
     }
 
@@ -141,16 +143,17 @@ public class MCJSMod
         public static void register(final RegisterPayloadHandlersEvent event) {
             // Sets the current network version
             final PayloadRegistrar registrar = event.registrar("1");
-            registrar.playBidirectional(
-                    ComputerBlockPayload.TYPE,
-                    ComputerBlockPayload.STREAM_CODEC,
-                    new DirectionalPayloadHandler<>(
-                            ClientPayloadHandler::handleComputerBlockPayload,
-                            ServerPayloadHandler::handleComputerBlockPayload
-                    )
+
+            registrar.playToClient(
+                    JavaScriptResultPayload.TYPE,
+                    JavaScriptResultPayload.STREAM_CODEC,
+                    ClientPayloadHandler::handleJavaScriptResultPayload
             );
-            registrar.playToServer(RunComputerCodePayload.TYPE, RunComputerCodePayload.STREAM_CODEC,
-                    ServerPayloadHandler::handleRunComputerCodePayload);
+            registrar.playToServer(
+                    JavaScriptExecutionPayload.TYPE,
+                    JavaScriptExecutionPayload.STREAM_CODEC,
+                    ServerPayloadHandler::handleJavaScriptExecutionPayload
+            );
         }
 
     }

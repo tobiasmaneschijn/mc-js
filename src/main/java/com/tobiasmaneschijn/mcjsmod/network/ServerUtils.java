@@ -1,14 +1,10 @@
 package com.tobiasmaneschijn.mcjsmod.network;
 
-import com.oracle.truffle.api.strings.TruffleString;
-import com.tobiasmaneschijn.mcjsmod.javascript.JSEngine;
 import com.tobiasmaneschijn.mcjsmod.javascript.JSEngineManager;
+import com.tobiasmaneschijn.mcjsmod.javascript.interfaces.IJavascriptEngine;
 import net.minecraft.client.Minecraft;
 import net.minecraft.server.MinecraftServer;
-import net.neoforged.fml.LogicalSide;
-import net.neoforged.fml.util.thread.EffectiveSide;
 import net.neoforged.neoforge.server.ServerLifecycleHooks;
-import org.graalvm.polyglot.PolyglotException;
 import org.graalvm.polyglot.Value;
 
 import java.util.HashMap;
@@ -28,7 +24,7 @@ public class ServerUtils {
         return jsEngineManager;
     }
 
-    public static JSEngine getJSEngine() {
+    public static IJavascriptEngine getJSEngine() {
         return getJSEngineManager().getEngine();
     }
 
@@ -44,13 +40,13 @@ public class ServerUtils {
         if (!isLogicalServer()) {
             throw new IllegalStateException("Attempted to evaluate JS on logical client side");
         }
-        JSEngine engine = getJSEngine();
+        IJavascriptEngine engine = getJSEngine();
         if (engine != null) {
             try {
-                Value result = engine.evaluate(script);
-                return new JSEvaluationResult(result, engine.getConsoleOutput());
-            } catch (PolyglotException e) {
-                return new JSEvaluationResult(null, engine.getConsoleOutput(), e.getMessage());
+                Value result = (Value) engine.execute(script);
+                return new JSEvaluationResult(result, engine.getTerminalContents());
+            } catch (Exception e) {
+                return new JSEvaluationResult(null, engine.getTerminalContents(), e.getMessage());
             }
         }
         return new JSEvaluationResult(null, "", "JS engine not available");

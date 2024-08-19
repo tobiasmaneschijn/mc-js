@@ -2,6 +2,9 @@ package com.tobiasmaneschijn.mcjsmod.ui.widget.editor;
 
 
 
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.interfaces.IEditorRenderer;
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.interfaces.IInputHandler;
+import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.interfaces.ISyntaxHighlighter;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
 import net.minecraft.client.gui.GuiGraphics;

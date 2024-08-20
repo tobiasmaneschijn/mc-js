@@ -16,5 +16,8 @@ public class ModItems {
     public static final DeferredRegister.Items ITEMS = DeferredRegister.createItems(MCJSMod.MODID);
     public static final DeferredItem<BlockItem> COMPUTER_ITEM = ITEMS.registerSimpleBlockItem("computer_block", ModBlocks.COMPUTER_BLOCK);
 
+    // New items
+    public static final DeferredItem<Item> PROCESSOR = ITEMS.registerSimpleItem("processor", new Item.Properties());
+    public static final DeferredItem<Item> CIRCUIT_BOARD = ITEMS.registerSimpleItem("circuit_board", new Item.Properties());
 
 }

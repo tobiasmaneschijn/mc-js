@@ -1,5 +1,7 @@
 {
   "block.mcjsmod.computer_block": "Computer",
+  "item.mcjsmod.circuit_board": "Circuit Board",
+  "item.mcjsmod.processor": "Processor",
   "ui.mcjsmod.creative_tab": "MC JS",
   "ui.mcjsmod.computer_screen_title": "Computer"
 }

@@ -1,0 +1,30 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IRI",
+    "GPG",
+    "ICI"
+  ],
+  "key": {
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "G": {
+      "item": "minecraft:glass_pane"
+    },
+    "P": {
+      "item": "mcjsmod:processor"
+    },
+    "C": {
+      "item": "mcjsmod:circuit_board"
+    }
+  },
+  "result": {
+    "id": "mcjsmod:computer_block",
+    "count": 1
+  }
+}
+

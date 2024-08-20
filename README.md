@@ -30,14 +30,13 @@ We're excited to announce that we're developing a complete JavaScript-based oper
 Stay tuned for updates on this groundbreaking feature!
 
 ## Installation
-1. Ensure you have Minecraft with Forge installed (version X.X.X or higher)
-2. Download the latest version of MinePuter.JS from [mod distribution site]
-3. Download the GraalVM library jar from [GraalVM download site]
-4. Place both the MinePuter.JS .jar file AND the GraalVM library .jar file in your Minecraft mods folder
+1. Ensure you have Minecraft with NeoForge installed (Minecraft version 1.21)
+2. Download the latest version of MinePuter.JS and MinePuter.JS GraalVM library the  from [mod distribution site]
+3. Place both the MinePuter.JS .jar file AND the GraalVM library .jar file in your Minecraft mods folder
    - It's crucial to include both files for the mod to function correctly
-5. Launch Minecraft and enjoy your new JavaScript-powered computers in survival mode!
+4. Launch Minecraft and enjoy your new JavaScript-powered computers in survival mode!
 
-Note: The GraalVM library is required for the JavaScript execution within Minecraft. Make sure you download the correct version compatible with your Minecraft and Forge versions.
+Note: The GraalVM library is required for the JavaScript execution within Minecraft.
 
 ## Usage
 1. Craft a Computer Block using the new recipe added by the mod
@@ -84,16 +83,11 @@ With the upcoming JavaScript-based OS, you'll be able to use MinePuter.JS for a 
 
 The possibilities are endless! MinePuter.JS aims to bring the power of personal computing into your Minecraft world.
 
-## Contributing
-We welcome contributions to MinePuter.JS! Please see our [Contributing Guidelines](link-to-contributing-guide) for more information on how to get involved.
-
 ## Support
 If you encounter any issues or have questions, please file an issue on our [GitHub Issues page](link-to-github-issues).
 
-## License
-MinePuter.JS is released under the [MIT License](link-to-license).
 
 ## Credits
-MinePuter.JS is created and maintained by [Your Name/Team Name]. Special thanks to the Minecraft modding community for their invaluable resources and support.
+MinePuter.JS is created and maintained by Tobias Maneschijn and Magnus Boll Jensen.
 
-This mod uses GraalVM, which is licensed under the Universal Permissive License (UPL).
+This mod uses GraalVM, which is licensed under [GFTC](https://www.oracle.com/downloads/licenses/graal-free-license.html)

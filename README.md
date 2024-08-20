@@ -1,14 +1,13 @@
 
 
-![Minecraft JS](./logo.png)
+![Minecraft JS](./blockbench/images/minecraft_title.png)
 
 
-# MinePuter.JS
 DISCLAIMER: MinePuter.JS is currently in very early development. Many features described here are planned but not yet implemented. The mod is rapidly evolving, and significant changes should be expected. Use in your world at your own risk, and please report any issues you encounter. Documentation on implemented features will be coming soon.
 
 
 ## Overview
-MinePuter.JS is a W.I.P.Minecraft mod that introduces fully functional, programmable computers into the survival game world. These computers run JavaScript, allowing players to create and execute scripts within Minecraft, enhancing your survival experience with advanced programming capabilities. With the upcoming JavaScript-based operating system, MinePuter.JS will essentially function as a personal computer within Minecraft!
+MinePuter.JS is a W.I.P. Minecraft mod that introduces fully functional, programmable computers into the survival game world. These computers run JavaScript, allowing players to create and execute scripts within Minecraft, enhancing your survival experience with advanced programming capabilities. With the upcoming JavaScript-based operating system, MinePuter.JS will essentially function as a personal computer within Minecraft!
 
 ## Features
 - Adds a craftable Computer Block to Minecraft survival mode

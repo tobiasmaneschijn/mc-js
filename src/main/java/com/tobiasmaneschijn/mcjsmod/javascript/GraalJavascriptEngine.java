@@ -9,12 +9,16 @@ import org.graalvm.polyglot.proxy.ProxyExecutable;
 import org.graalvm.polyglot.proxy.ProxyObject;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 
 public class GraalJavascriptEngine implements IJavascriptEngine {
 
@@ -31,15 +35,37 @@ public class GraalJavascriptEngine implements IJavascriptEngine {
     @Override
     public void init() {
         consoleOutput = new ByteArrayOutputStream();
-        context = Context.newBuilder("js")
-                .allowAllAccess(false)
-                .allowCreateThread(false)
-                .allowHostAccess(HostAccess.NONE)
-                .out(consoleOutput)
-                .err(consoleOutput)
-                .build();
+
+        // Suppress Truffle logs
+        Logger.getLogger("org.graalvm.truffle").setLevel(Level.OFF);
+
+
+        // Redirect System.err to capture and suppress GraalVM warnings
+        PrintStream originalErr = System.err;
+        ByteArrayOutputStream warningCapture = new ByteArrayOutputStream();
+        System.setErr(new PrintStream(warningCapture));
+
+        try {
+            context = Context.newBuilder("js")
+                    .allowAllAccess(false)
+                    .allowCreateThread(false)
+                    .allowHostAccess(HostAccess.NONE)
+                    .option("engine.WarnInterpreterOnly", "false") // Suppress interpreter warning
+                    .out(consoleOutput)
+                    .err(consoleOutput)
+                    .build();
+        } finally {
+            // Restore original System.err
+            System.setErr(originalErr);
+        }
 
         setupConsoleLog();
+
+        // Log captured warnings at debug level
+        String warnings = warningCapture.toString(StandardCharsets.UTF_8);
+        if (!warnings.isEmpty()) {
+            MCJSMod.LOGGER.debug("Suppressed GraalVM warnings: " + warnings);
+        }
     }
 
     private void setupConsoleLog() {
@@ -81,6 +107,9 @@ public class GraalJavascriptEngine implements IJavascriptEngine {
                 } catch (Exception e) {
                     MCJSMod.LOGGER.error("Error writing newline to console output", e);
                 }
+
+                MCJSMod.LOGGER.info("GraalVM Console: " + consoleOutput.toString());
+
                 return Value.asValue(null);
             }
         });
@@ -116,9 +145,16 @@ public class GraalJavascriptEngine implements IJavascriptEngine {
 
     @Override
     public void bindFunction(String name, Function<Object[], Object> function) {
-        context.getBindings("js").putMember(name, function);
+        context.getBindings("js").putMember(name, (ProxyExecutable) (Value[] args) -> {
+            // Convert Value[] to Object[]
+            Object[] convertedArgs = new Object[args.length];
+            for (int i = 0; i < args.length; i++) {
+                convertedArgs[i] = args[i].as(Object.class);
+            }
+            // Apply the converted arguments to the function
+            return function.apply(convertedArgs);
+        });
     }
-
     @Override
     public void close() {
         context.close();
@@ -180,5 +216,10 @@ public class GraalJavascriptEngine implements IJavascriptEngine {
         } else {
             return value.toString();
         }
+    }
+
+    @Override
+    public Context getContext() {
+        return context;
     }
 }

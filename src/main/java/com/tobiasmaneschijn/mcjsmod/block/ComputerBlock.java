@@ -57,6 +57,7 @@ public class ComputerBlock extends Block implements EntityBlock {
         // open screen
         if(blockEntity instanceof ComputerBlockEntity) {
             Minecraft.getInstance().setScreen(new ComputerScreen(pos));
+            ((ComputerBlockEntity) blockEntity).setScreen((ComputerScreen) Minecraft.getInstance().screen);
             return InteractionResult.SUCCESS;
         }
         return InteractionResult.FAIL;

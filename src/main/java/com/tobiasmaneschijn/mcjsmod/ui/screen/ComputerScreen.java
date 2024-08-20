@@ -20,6 +20,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.neoforged.neoforge.network.PacketDistributor;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class ComputerScreen extends Screen {
     private Terminal terminal;
 
@@ -29,9 +32,8 @@ public class ComputerScreen extends Screen {
 
     private ComputerBlockEntity computerBlockEntity;
 
-    private String lastSentCode;
-    private long lastEditTime;
-    private static final long DEBOUNCE_TIME = 500; // 500ms debounce
+    private List<String> terminalLines = new ArrayList<>();
+
 
     // texture asset locations
 
@@ -63,15 +65,26 @@ public class ComputerScreen extends Screen {
 
     @Override
     protected void init() {
-        super.init();
+        try {
+            super.init();
 
-         x = (width - imageWidth) / 2;
-         y = (height - imageHeight) / 2;
+            x = (width - imageWidth) / 2;
+            y = (height - imageHeight) / 2;
 
-        // Terminal output area
-        terminal = new Terminal(x, y + 12, 256, 256 - 24);
-        terminal.setCommandCallback(this::handleTerminalCommand);
-        addRenderableWidget(terminal);
+            // Terminal output area
+            terminal = new Terminal(x, y + 12, 256, 256 - 24);
+            terminal.setCommandCallback(this::handleTerminalCommand);
+            addRenderableWidget(terminal);
+
+            // Restore terminal content if it exists
+            if (!terminalLines.isEmpty()) {
+                for (String line : terminalLines) {
+                    terminal.appendLine(line);
+                }
+            }
+        } catch (Exception e) {
+            MCJSMod.LOGGER.error("Error initializing ComputerScreen", e);
+        }
     }
 
 
@@ -95,7 +108,10 @@ public class ComputerScreen extends Screen {
     @Override
     public void onClose() {
         super.onClose();
-        // Ensure any unsent changes are sent when closing the screen
+        terminalLines = new ArrayList<>(terminal.getLines());
+        if (computerBlockEntity != null) {
+            computerBlockEntity.setScreen(null);
+        }
     }
 
     @Override
@@ -144,7 +160,6 @@ public class ComputerScreen extends Screen {
         guiGraphics.blit(CORNERS_TEXTURE, x + imageWidth, y + imageHeight - 12, 12, 36, 12, 12);
 
 
-
     }
 
     @Override
@@ -157,42 +172,71 @@ public class ComputerScreen extends Screen {
 
 
     private void handleTerminalCommand(String command) {
-        // Here you can implement your command handling logic
-        // For example, you might want to send the command to the server
-        // or execute it locally if it's a client-side command
-        if (command.equalsIgnoreCase("clear")) {
-            terminal.clear();
-        } else {
-            executeJavaScript(command);
+        try {
+            if (computerBlockEntity != null) {
+                // Send all commands to the server for execution
+                JavaScriptExecutionPayload payload = new JavaScriptExecutionPayload(computerBlockEntity.getBlockPos(), command);
+                PacketDistributor.sendToServer(payload);
+            } else {
+                terminal.appendError("Computer block entity not found.");
+            }
+
+            if (command.equalsIgnoreCase("clear")) {
+                terminal.clear();
+                terminalLines.clear();
+            }
+
+        } catch (Exception e) {
+            MCJSMod.LOGGER.error("Error handling terminal command: " + command, e);
+            terminal.appendError("Error: " + e.getMessage());
         }
     }
 
-    private void executeJavaScript(String code) {
-        JavaScriptExecutionPayload payload = new JavaScriptExecutionPayload(computerBlockEntity.getBlockPos(), code);
-        PacketDistributor.sendToServer(payload);
-    }
 
     public void handleJavaScriptResult(String output, String result) {
-        StringBuilder displayText = new StringBuilder();
+        try {
+            StringBuilder displayText = new StringBuilder();
 
-        // Append the console output
-        if (!output.isEmpty()) {
-            displayText.append(output).append("\n");
+            if (!output.isEmpty()) {
+                displayText.append(output);
+            }
+
+            if (!result.isEmpty() && output.isEmpty() && !result.toLowerCase().contains("null")) {
+                if (displayText.length() > 0) {
+                    displayText.append("\n");
+                }
+                displayText.append(result);
+            }
+
+            for (String line : displayText.toString().split("\n")) {
+                terminal.appendLine(line);
+                terminalLines.add(line);
+            }
+
+            // new line
+            terminal.newPrompt();
+
+        } catch (Exception e) {
+            MCJSMod.LOGGER.error("Error handling JavaScript result", e);
+            terminal.appendError("Error handling result: " + e.getMessage());
+            terminal.newPrompt();
         }
-
-        // Update the terminal
-        setTerminalOutput(displayText.toString(), false);
     }
+
 
     public void setTerminalOutput(String output, boolean clear) {
         if (terminal != null) {
-            if (clear)
+            if (clear) {
                 terminal.clear();
+                terminalLines.clear();
+            }
 
             for (String line : output.split("\n")) {
                 terminal.appendLine(line);
+                terminalLines.add(line);
             }
         }
     }
+
 
 }

@@ -1,5 +1,7 @@
 package com.tobiasmaneschijn.mcjsmod.javascript.interfaces;
 
+import org.graalvm.polyglot.Context;
+
 import java.util.function.Function;
 
 public interface IJavascriptEngine {
@@ -19,6 +21,8 @@ public interface IJavascriptEngine {
     // New methods for state management
     String getState();
     void setState(String state);
+
+    Context getContext();
 
     // New method to clear the terminal contents
     void clearTerminal();

@@ -36,25 +36,6 @@ function changeDir(dir) {
 }
 
 async function processCommand(input) {
-    let outputFile = null;
-
-    // Check for output redirection with '>'
-    if (input.includes('>')) {
-        const parts = input.split('>').map(part => part.trim());
-        input = parts[0];  // The command part
-        outputFile = parts[1];  // The file to write the output to
-
-        if (!outputFile) {
-            console.error("Error: No output file specified after '>'.");
-            return true;
-        }
-
-        // Ensure the output file is an absolute path
-        if (!outputFile.startsWith('/')) {
-            outputFile = currentDir + '/' + outputFile;
-        }
-    }
-
     let commands = input.split('|').map(cmd => cmd.trim());
     let output = '';
 
@@ -66,19 +47,9 @@ async function processCommand(input) {
             return false;
         }
     }
-
-    // If there is an output redirection, write the output to the file
-    if (outputFile) {
-        if (output !== undefined && output !== null) {
-            fs.writeFile(outputFile, output);
-            console.log(\`Output written to ${outputFile}\`);
-        } else {
-            console.log(\`No output to write to ${outputFile}\`);
-        }
-    } else if (output !== undefined && output !== null && output.trim() !== '') {
+    if (output !== undefined && output !== null && output.trim() !== '') {
         console.log(output);
     }
-
     return true;
 }
 

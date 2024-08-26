@@ -2,37 +2,27 @@ package com.tobiasmaneschijn.mcjsmod.javascript.interfaces;
 
 import org.graalvm.polyglot.Context;
 
+import java.util.concurrent.CompletableFuture;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 public interface IJavascriptEngine {
+    void initialize();
+    void loadScript(String scriptPath);
 
-    void init();
+    CompletableFuture<Void> evaluate(String code);
 
-    Object execute(String script);
+    CompletableFuture<Void> executeScript();
+    void shutdown();
 
-    void interrupt();
+    void subscribeToOutput(Consumer<String> outputConsumer);
+    void subscribeToError(Consumer<String> errorConsumer);
+    void provideInput(String input);
 
-    String getTerminalContents();
+    boolean isRunning();
 
+    // New method to bind Java functions to JavaScript
     void bindFunction(String name, Function<Object[], Object> function);
 
-    void close();
-
-    // New methods for state management
-    String getState();
-    void setState(String state);
-
     Context getContext();
-
-    // New method to clear the terminal contents
-    void clearTerminal();
-
-    // New method to get the last execution result
-    Object getLastResult();
-
-    // New method to check if the engine is busy
-    boolean isBusy();
-
-    // New method to set execution timeout
-    void setTimeout(long milliseconds);
 }

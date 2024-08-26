@@ -19,45 +19,36 @@ public class Config
 {
     private static final ModConfigSpec.Builder BUILDER = new ModConfigSpec.Builder();
 
-    private static final ModConfigSpec.BooleanValue LOG_DIRT_BLOCK = BUILDER
-            .comment("Whether to log the dirt block on common setup")
-            .define("logDirtBlock", true);
-
-    private static final ModConfigSpec.IntValue MAGIC_NUMBER = BUILDER
-            .comment("A magic number")
-            .defineInRange("magicNumber", 42, 0, Integer.MAX_VALUE);
-
-    public static final ModConfigSpec.ConfigValue<String> MAGIC_NUMBER_INTRODUCTION = BUILDER
-            .comment("What you want the introduction message to be for the magic number")
-            .define("magicNumberIntroduction", "The magic number is... ");
-
-    // a list of strings that are treated as resource locations for items
-    private static final ModConfigSpec.ConfigValue<List<? extends String>> ITEM_STRINGS = BUILDER
-            .comment("A list of items to log on common setup.")
-            .defineListAllowEmpty("items", List.of("minecraft:iron_ingot"), Config::validateItemName);
-
-    static final ModConfigSpec SPEC = BUILDER.build();
-
-    public static boolean logDirtBlock;
-    public static int magicNumber;
-    public static String magicNumberIntroduction;
-    public static Set<Item> items;
 
     private static boolean validateItemName(final Object obj)
     {
         return obj instanceof String itemName && BuiltInRegistries.ITEM.containsKey(ResourceLocation.parse(itemName));
     }
 
+    public static ModConfigSpec.IntValue MAX_CONCURRENT_SCRIPTS = BUILDER
+            .comment("Maximum number of scripts that can run concurrently")
+            .defineInRange("maxConcurrentScripts", 5, 1, 20);
+    public static ModConfigSpec.LongValue MAX_SCRIPT_EXECUTION_TIME = BUILDER
+            .comment("Maximum execution time for a script in milliseconds")
+            .defineInRange("maxScriptExecutionTime", 5000L, 1000L, 30000L);
+    public static ModConfigSpec.LongValue MAX_MEMORY_USAGE = BUILDER
+            .comment("Maximum memory usage for all scripts in bytes")
+            .defineInRange("maxMemoryUsage", 100 * 1024 * 1024L, 10 * 1024 * 1024L, 1024 * 1024 * 1024L);
+    public static ModConfigSpec.IntValue MAX_CONTEXTS_PER_PLAYER = BUILDER
+            .comment("Maximum number of script contexts a player can have")
+            .defineInRange("maxContextsPerPlayer", 3, 1, 10);
+
+
+    static final ModConfigSpec SPEC = BUILDER.build();
+
     @SubscribeEvent
     static void onLoad(final ModConfigEvent event)
     {
-        logDirtBlock = LOG_DIRT_BLOCK.get();
-        magicNumber = MAGIC_NUMBER.get();
-        magicNumberIntroduction = MAGIC_NUMBER_INTRODUCTION.get();
+        MAX_CONCURRENT_SCRIPTS.get();
+        MAX_SCRIPT_EXECUTION_TIME.get();
+        MAX_MEMORY_USAGE.get();
+        MAX_CONTEXTS_PER_PLAYER.get();
 
-        // convert the list of strings into a set of items
-        items = ITEM_STRINGS.get().stream()
-                .map(itemName -> BuiltInRegistries.ITEM.get(ResourceLocation.parse(itemName)))
-                .collect(Collectors.toSet());
+        MCJSMod.LOGGER.debug("Loaded MCJSMod config file {}", event.getConfig().getFileName());
     }
 }

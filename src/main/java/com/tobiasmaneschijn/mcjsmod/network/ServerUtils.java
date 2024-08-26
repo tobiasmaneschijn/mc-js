@@ -8,7 +8,10 @@ import net.neoforged.neoforge.server.ServerLifecycleHooks;
 public class ServerUtils {
 
     public static boolean isLogicalServer() {
-        return Minecraft.getInstance().isLocalServer();
+        if (Minecraft.getInstance().level != null) {
+            return !Minecraft.getInstance().level.isClientSide;
+        }
+        return false;
     }
 
     public static MinecraftServer getServer() {

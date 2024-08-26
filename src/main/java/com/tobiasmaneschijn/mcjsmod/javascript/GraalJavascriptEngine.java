@@ -2,220 +2,223 @@ package com.tobiasmaneschijn.mcjsmod.javascript;
 
 import com.tobiasmaneschijn.mcjsmod.MCJSMod;
 import com.tobiasmaneschijn.mcjsmod.javascript.interfaces.IJavascriptEngine;
-import org.graalvm.polyglot.Context;
-import org.graalvm.polyglot.HostAccess;
-import org.graalvm.polyglot.Value;
+import org.graalvm.polyglot.*;
+import org.graalvm.polyglot.io.IOAccess;
 import org.graalvm.polyglot.proxy.ProxyExecutable;
-import org.graalvm.polyglot.proxy.ProxyObject;
 
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.io.PrintStream;
-import java.nio.charset.StandardCharsets;
-import java.time.Duration;
-import java.util.Collections;
-import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.logging.Level;
-import java.util.logging.Logger;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class GraalJavascriptEngine implements IJavascriptEngine {
-
     private Context context;
-    private ByteArrayOutputStream consoleOutput;
-    private Object lastResult;
-    private AtomicBoolean isBusy = new AtomicBoolean(false);
-    private long timeout = 5000; // Default timeout of 5 seconds
+    private String scriptContent;
+    private final BlockingQueue<String> inputQueue;
+    private Consumer<String> outputConsumer;
+    private Consumer<String> errorConsumer;
+    private boolean isRunning;
+    private Value processInputFunction;
+    private final ExecutorService executorService;
 
     public GraalJavascriptEngine() {
-        init();
+        this.inputQueue = new LinkedBlockingQueue<>();
+        this.isRunning = false;
+        this.executorService = Executors.newSingleThreadExecutor();
     }
 
     @Override
-    public void init() {
-        consoleOutput = new ByteArrayOutputStream();
-
-        // Suppress Truffle logs
-        Logger.getLogger("org.graalvm.truffle").setLevel(Level.OFF);
-
-
-        // Redirect System.err to capture and suppress GraalVM warnings
-        PrintStream originalErr = System.err;
-        ByteArrayOutputStream warningCapture = new ByteArrayOutputStream();
-        System.setErr(new PrintStream(warningCapture));
-
+    public void initialize() {
         try {
-            context = Context.newBuilder("js")
-                    .allowAllAccess(false)
-                    .allowCreateThread(false)
-                    .allowHostAccess(HostAccess.NONE)
-                    .option("engine.WarnInterpreterOnly", "false") // Suppress interpreter warning
-                    .out(consoleOutput)
-                    .err(consoleOutput)
-                    .build();
-        } finally {
-            // Restore original System.err
-            System.setErr(originalErr);
+            Context.Builder contextBuilder = Context.newBuilder("js")
+                    .allowHostAccess(HostAccess.ALL)
+                    .allowCreateThread(true)
+                    .allowIO(IOAccess.NONE)
+                    .allowCreateProcess(false)
+                    .allowExperimentalOptions(true)
+                    .option("js.ecmascript-version", "2022")
+                    .option("js.nashorn-compat", "true");
+
+
+            context = contextBuilder.build();
+
+
+            MCJSMod.LOGGER.info("GraalJavascriptEngine initialized successfully");
+        } catch (IllegalArgumentException e) {
+            MCJSMod.LOGGER.error("Error initializing GraalJavascriptEngine: " + e.getMessage());
+            throw new RuntimeException("Failed to initialize GraalJavascriptEngine", e);
         }
 
-        setupConsoleLog();
-
-        // Log captured warnings at debug level
-        String warnings = warningCapture.toString(StandardCharsets.UTF_8);
-        if (!warnings.isEmpty()) {
-            MCJSMod.LOGGER.debug("Suppressed GraalVM warnings: " + warnings);
-        }
-    }
-
-    private void setupConsoleLog() {
-        context.getBindings("js").putMember("console", new ProxyObject() {
+        // Bind Java methods to JavaScript global objects
+        context.getBindings("js").putMember("javaRead", new ProxyExecutable() {
             @Override
-            public Object getMember(String key) {
-                if (key.equals("log")) {
-                    return (ProxyExecutable) this::logToConsole;
+            public Object execute(Value... arguments) {
+                try {
+                    return inputQueue.take();
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    return null;
+                }
+            }
+        });
+
+        context.getBindings("js").putMember("javaWrite", new ProxyExecutable() {
+            @Override
+            public Object execute(Value... arguments) {
+                if (arguments.length > 0 && outputConsumer != null) {
+                    outputConsumer.accept(arguments[0].asString());
                 }
                 return null;
             }
+        });
 
+        context.getBindings("js").putMember("javaWriteErr", new ProxyExecutable() {
             @Override
-            public Object getMemberKeys() {
-                return Collections.singleton("log");
-            }
-
-            @Override
-            public boolean hasMember(String key) {
-                return key.equals("log");
-            }
-
-            @Override
-            public void putMember(String key, Value value) {
-                // Do nothing, we don't allow adding new members
-            }
-
-            private Object logToConsole(Value... args) {
-                for (Value arg : args) {
-                    try {
-                        consoleOutput.write(convertValueToString(arg).getBytes(StandardCharsets.UTF_8));
-                        consoleOutput.write(" ".getBytes(StandardCharsets.UTF_8));
-                    } catch (Exception e) {
-                        MCJSMod.LOGGER.error("Error writing to console output", e);
-                    }
+            public Object execute(Value... arguments) {
+                if (arguments.length > 0 && errorConsumer != null) {
+                    errorConsumer.accept(arguments[0].asString());
                 }
-                try {
-                    consoleOutput.write("\n".getBytes(StandardCharsets.UTF_8));
-                } catch (Exception e) {
-                    MCJSMod.LOGGER.error("Error writing newline to console output", e);
-                }
-
-                MCJSMod.LOGGER.info("GraalVM Console: " + consoleOutput.toString());
-
-                return Value.asValue(null);
+                return null;
             }
+        });
+
+        context.eval("js", "function processInput(input) { console.log('Processing input: ' + input); }");
+        processInputFunction = context.getBindings("js").getMember("processInput");
+
+        if (processInputFunction == null || !processInputFunction.canExecute()) {
+            throw new IllegalStateException("Failed to initialize processInput function");
+        }
+    }
+
+    @Override
+    public void loadScript(String code) {
+        scriptContent = code;
+    }
+
+    @Override
+    public CompletableFuture<Void> evaluate(String code) {
+        return CompletableFuture.runAsync(() -> {
+            isRunning = true;
+            try {
+                MCJSMod.LOGGER.info("Evaluating code: " + code.substring(0, Math.min(code.length(), 100)) + "...");
+                Value result = context.eval("js", code);
+                if (result.canExecute()) {
+                    MCJSMod.LOGGER.info("Executing result of evaluation");
+                    result.execute();
+                }
+                MCJSMod.LOGGER.info("Code evaluation completed successfully");
+            } catch (PolyglotException e) {
+                MCJSMod.LOGGER.error("Error executing JavaScript: " + e.getMessage(), e);
+                errorConsumer.accept("Error executing JavaScript: " + e.getMessage());
+            } finally {
+                isRunning = false;
+            }
+        }, executorService);
+    }
+
+    @Override
+    public CompletableFuture<Void> executeScript() {
+        if (scriptContent == null) {
+            MCJSMod.LOGGER.error("No script loaded. Call loadScript() first.");
+            throw new IllegalStateException("No script loaded. Call loadScript() first.");
+        }
+        return CompletableFuture.runAsync(() -> {
+            isRunning = true;
+            try {
+                MCJSMod.LOGGER.info("Executing script: " + scriptContent.substring(0, Math.min(scriptContent.length(), 100)) + "...");
+                context.eval("js", scriptContent);
+                MCJSMod.LOGGER.info("Script execution completed successfully");
+            } catch (PolyglotException e) {
+                MCJSMod.LOGGER.error("Error executing JavaScript script: " + e.getMessage(), e);
+                errorConsumer.accept("Error executing JavaScript: " + e.getMessage());
+            } finally {
+                isRunning = false;
+            }
+        }, executorService);
+    }
+
+
+    @Override
+    public void shutdown() {
+        isRunning = false;
+        if (context != null) {
+            context.close();
+        }
+        executorService.shutdown();
+    }
+
+    @Override
+    public void subscribeToOutput(Consumer<String> outputConsumer) {
+        this.outputConsumer = outputConsumer;
+    }
+
+    @Override
+    public void subscribeToError(Consumer<String> errorConsumer) {
+        this.errorConsumer = errorConsumer;
+    }
+
+    @Override
+    public void provideInput(String input) {
+        CompletableFuture.runAsync(() -> {
+            try {
+                if (isRunning && processInputFunction != null) {
+                    MCJSMod.LOGGER.info("Providing input: " + input);
+                    processInputFunction.execute(input);
+                } else {
+                    inputQueue.offer(input);
+                    MCJSMod.LOGGER.info("Queued input: " + input);
+                    processQueuedInput(); // Try to process queued input
+                }
+            } catch (Exception e) {
+                if (errorConsumer != null) {
+                    errorConsumer.accept("Error processing input: " + e.getMessage());
+                }
+            }
+        }, executorService).exceptionally(throwable -> {
+            if (errorConsumer != null) {
+                errorConsumer.accept("Async execution error: " + throwable.getMessage());
+            }
+            return null;
         });
     }
 
-    @Override
-    public Object execute(String script) {
-        if (isBusy.getAndSet(true)) {
-            throw new IllegalStateException("Engine is busy");
+    private void processQueuedInput() {
+        if (!isRunning || processInputFunction == null) {
+            return;
         }
-        try {
-            consoleOutput.reset(); // Clear previous output
-            lastResult = context.eval("js", script);
-            return lastResult;
-        } finally {
-            isBusy.set(false);
-        }
-    }
-
-    @Override
-    public void interrupt() {
-        try {
-            context.interrupt(Duration.ofMillis(timeout));
-        } catch (TimeoutException e) {
-            MCJSMod.LOGGER.error("Interrupting JS execution timed out");
+        String input;
+        while ((input = inputQueue.poll()) != null) {
+            final String currentInput = input;
+            try {
+                MCJSMod.LOGGER.info("Processing queued input: " + currentInput);
+                processInputFunction.execute(currentInput);
+            } catch (Exception e) {
+                if (errorConsumer != null) {
+                    errorConsumer.accept("Error processing queued input: " + e.getMessage());
+                }
+            }
         }
     }
-
     @Override
-    public String getTerminalContents() {
-        return consoleOutput.toString(StandardCharsets.UTF_8);
+    public boolean isRunning() {
+        return isRunning;
     }
 
     @Override
     public void bindFunction(String name, Function<Object[], Object> function) {
-        context.getBindings("js").putMember(name, (ProxyExecutable) (Value[] args) -> {
-            // Convert Value[] to Object[]
-            Object[] convertedArgs = new Object[args.length];
-            for (int i = 0; i < args.length; i++) {
-                convertedArgs[i] = args[i].as(Object.class);
+        context.getBindings("js").putMember(name, new ProxyExecutable() {
+            @Override
+            public Object execute(Value... arguments) {
+                Object[] args = new Object[arguments.length];
+                for (int i = 0; i < arguments.length; i++) {
+                    args[i] = arguments[i].as(Object.class);
+                }
+                return function.apply(args);
             }
-            // Apply the converted arguments to the function
-            return function.apply(convertedArgs);
         });
-    }
-    @Override
-    public void close() {
-        context.close();
-    }
-
-    @Override
-    public String getState() {
-        // This is a simple implementation. You might want to serialize more state information.
-        return context.getBindings("js").toString();
-    }
-
-    @Override
-    public void setState(String state) {
-        // This is a simple implementation. You might need to parse the state string and set up the context accordingly.
-        context.eval("js", state);
-    }
-
-    @Override
-    public void clearTerminal() {
-        consoleOutput.reset();
-    }
-
-    @Override
-    public Object getLastResult() {
-        return lastResult;
-    }
-
-    @Override
-    public boolean isBusy() {
-        return isBusy.get();
-    }
-
-    @Override
-    public void setTimeout(long milliseconds) {
-        this.timeout = milliseconds;
-    }
-
-    private String convertValueToString(Value value) {
-        if (value.isString()) {
-            return value.asString();
-        } else if (value.hasArrayElements()) {
-            StringBuilder sb = new StringBuilder("[");
-            for (int i = 0; i < value.getArraySize(); i++) {
-                if (i > 0) sb.append(", ");
-                sb.append(convertValueToString(value.getArrayElement(i)));
-            }
-            sb.append("]");
-            return sb.toString();
-        } else if (value.hasMembers()) {
-            StringBuilder sb = new StringBuilder("{");
-            boolean first = true;
-            for (String key : value.getMemberKeys()) {
-                if (!first) sb.append(", ");
-                first = false;
-                sb.append(key).append(": ").append(convertValueToString(value.getMember(key)));
-            }
-            sb.append("}");
-            return sb.toString();
-        } else {
-            return value.toString();
-        }
     }
 
     @Override

@@ -3,16 +3,11 @@ package com.tobiasmaneschijn.mcjsmod.ui.screen;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.tobiasmaneschijn.mcjsmod.MCJSMod;
 import com.tobiasmaneschijn.mcjsmod.blockentity.ComputerBlockEntity;
-import com.tobiasmaneschijn.mcjsmod.network.payload.ComputerBlockPayload;
-import com.tobiasmaneschijn.mcjsmod.network.payload.RunComputerCodePayload;
-import com.tobiasmaneschijn.mcjsmod.network.shell.JavaScriptExecutionPayload;
-import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.EditorLogger;
-import com.tobiasmaneschijn.mcjsmod.ui.widget.editor.TextEditor;
+import com.tobiasmaneschijn.mcjsmod.network.NetworkHandler;
+import com.tobiasmaneschijn.mcjsmod.network.payload.ClientToServerInputPayload;
 import com.tobiasmaneschijn.mcjsmod.ui.widget.terminal.Terminal;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.MultiLineEditBox;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
@@ -22,10 +17,10 @@ import net.neoforged.neoforge.network.PacketDistributor;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 
 public class ComputerScreen extends Screen {
     private Terminal terminal;
-
 
     private final int imageWidth = 256;
     private final int imageHeight = 256;
@@ -56,6 +51,9 @@ public class ComputerScreen extends Screen {
     private int x;
     private int y;
 
+    private int updateTimer = 0;
+    private static final int UPDATE_INTERVAL = 20; // Update every 20 ticks (1 second)
+
     public ComputerScreen(BlockPos pos) {
         super(Component.translatable("ui.mcjsmod.computer_screen_title"));
         if (Minecraft.getInstance().level != null) {
@@ -65,25 +63,16 @@ public class ComputerScreen extends Screen {
 
     @Override
     protected void init() {
-        try {
-            super.init();
-
-            x = (width - imageWidth) / 2;
-            y = (height - imageHeight) / 2;
-
-            // Terminal output area
-            terminal = new Terminal(x, y + 12, 256, 256 - 24);
-            terminal.setCommandCallback(this::handleTerminalCommand);
-            addRenderableWidget(terminal);
-
-            // Restore terminal content if it exists
-            if (!terminalLines.isEmpty()) {
-                for (String line : terminalLines) {
-                    terminal.appendLine(line);
-                }
+        super.init();
+        x = (width - imageWidth) / 2;
+        y = (height - imageHeight) / 2;
+        terminal = new Terminal(x, y + 12, 256, 256 - 24, computerBlockEntity);
+        terminal.setInputCallback(this::sendInput); // Add this line
+        addRenderableWidget(terminal);
+        if (!terminalLines.isEmpty()) {
+            for (String line : terminalLines) {
+                terminal.appendLine(line);
             }
-        } catch (Exception e) {
-            MCJSMod.LOGGER.error("Error initializing ComputerScreen", e);
         }
     }
 
@@ -91,18 +80,22 @@ public class ComputerScreen extends Screen {
     @Override
     public void tick() {
         super.tick();
-        // If there's any pending result in the ComputerBlockEntity, display it
-        if (computerBlockEntity != null) {
-            String latestResult = computerBlockEntity.getLatestResult();
-            String latestConsoleOutput = computerBlockEntity.getLatestConsoleOutput();
-            if (!latestResult.isEmpty() || !latestConsoleOutput.isEmpty()) {
-                handleJavaScriptResult(latestConsoleOutput, latestResult);
-                // Clear the stored results to avoid displaying them again
-                computerBlockEntity.setLatestResult("");
-                computerBlockEntity.setLatestConsoleOutput("");
+        updateTimer++;
+        if (updateTimer >= UPDATE_INTERVAL) {
+
+            if (computerBlockEntity != null && computerBlockEntity.shouldClearInput()) {
+                if (terminal != null) {
+                    terminal.clearInput();
+                }
             }
+
+            if (terminal != null) {
+                terminal.updateFromBlockEntity();
+            }
+            updateTimer = 0;
         }
     }
+
 
 
     @Override
@@ -170,73 +163,40 @@ public class ComputerScreen extends Screen {
 
     }
 
-
-    private void handleTerminalCommand(String command) {
-        try {
-            if (computerBlockEntity != null) {
-                // Send all commands to the server for execution
-                JavaScriptExecutionPayload payload = new JavaScriptExecutionPayload(computerBlockEntity.getBlockPos(), command);
-                PacketDistributor.sendToServer(payload);
-            } else {
-                terminal.appendError("Computer block entity not found.");
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (computerBlockEntity.getPendingInput() != null && !computerBlockEntity.getPendingInput().isDone()) {
+            if (keyCode == 257) { // Enter key
+                String input = terminal.getCurrentInput();
+                sendInput(input);
+                terminal.clearInput();
+                return true;
             }
-
-            if (command.equalsIgnoreCase("clear")) {
-                terminal.clear();
-                terminalLines.clear();
-            }
-
-        } catch (Exception e) {
-            MCJSMod.LOGGER.error("Error handling terminal command: " + command, e);
-            terminal.appendError("Error: " + e.getMessage());
         }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
-
-    public void handleJavaScriptResult(String output, String result) {
-        try {
-            StringBuilder displayText = new StringBuilder();
-
-            if (!output.isEmpty()) {
-                displayText.append(output);
-            }
-
-            if (!result.isEmpty() && output.isEmpty() && !result.toLowerCase().contains("null")) {
-                if (displayText.length() > 0) {
-                    displayText.append("\n");
-                }
-                displayText.append(result);
-            }
-
-            for (String line : displayText.toString().split("\n")) {
-                terminal.appendLine(line);
-                terminalLines.add(line);
-            }
-
-            // new line
-            terminal.newPrompt();
-
-        } catch (Exception e) {
-            MCJSMod.LOGGER.error("Error handling JavaScript result", e);
-            terminal.appendError("Error handling result: " + e.getMessage());
-            terminal.newPrompt();
-        }
+    private void sendInput(String input) {
+        NetworkHandler.sendToServer(new ClientToServerInputPayload(computerBlockEntity.getBlockPos(), input));
     }
 
+    public void addOutput(String message, boolean isError) {
+        terminal.appendLine(
+                isError ? "ERROR: " + message : message
+        );
+    }
 
-    public void setTerminalOutput(String output, boolean clear) {
+    public BlockPos getBlockPos() {
+        return computerBlockEntity.getBlockPos();
+    }
+
+    public void clearInput() {
         if (terminal != null) {
-            if (clear) {
-                terminal.clear();
-                terminalLines.clear();
-            }
-
-            for (String line : output.split("\n")) {
-                terminal.appendLine(line);
-                terminalLines.add(line);
-            }
+            terminal.clearInput();
         }
     }
+
+
 
 
 }
